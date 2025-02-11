@@ -1,4 +1,4 @@
-# Zero-Shot Object Tracking in First-Person Gaming
+# Retinal Disease Detection Using Deep Learning
 
 ## Team Members
 - Tanish Roy
@@ -7,55 +7,65 @@
 - Inaam Azeezur-Rahman
 
 ## Project Overview
-This project focuses on developing a **zero-shot object tracking system** optimized for **first-person gaming environments**. By leveraging **pre-trained models and semantic embeddings**, we aim to enable tracking of dynamic objects **without the need for extensive labeled training data**.
+This project focuses on developing an **AI-driven retinal disease detection system**, leveraging deep learning techniques for **diabetic retinopathy (DR) classification**. The system analyzes **retinal images** and classifies them into **five severity levels** while providing **explainability through saliency maps**. The goal is to enhance **early detection and automated diagnosis** in ophthalmology.
 
-## Machine-Vision Problem
-We are addressing the problem of **tracking objects in first-person gaming environments** with **zero-shot learning**. This is challenging due to:
-- **Generalization to unseen objects** during inference.
-- **Fast-changing perspectives** in FPS games.
-- **Real-time performance requirements** for practical applications.
+## Problem Statement
+Diabetic retinopathy (DR) is a leading cause of **vision impairment**, and early detection is critical for **timely treatment**. However, **manual diagnosis is time-consuming and requires expert ophthalmologists**. Our **deep learning-based solution** aims to automate **retinal image analysis**, making **diagnosis more accessible and efficient**.
 
 ## Dataset
-- **Dataset Name**: Doom-FPS Dataset  
-- **Source**: [Doom Gameplay Dataset](https://github.com/thavlik/doom-gameplay-dataset)  
-- **Description**: The dataset includes **170+ hours** of gameplay footage from **Doom 1 & Doom 2**, making it suitable for **object tracking, unsupervised learning, and video processing**.
+- **APTOS 2019 Blindness Detection Dataset** ([Kaggle](https://www.kaggle.com/c/aptos2019-blindness-detection))
+  - ~3,662 images categorized into **five severity levels** (0-4).
+- **DRIVE Dataset** ([Grand Challenge](https://drive.grand-challenge.org/))
+  - 40 images with annotated **ground truth for vessel segmentation**.
 
-## Motivation for This Project
-This project is significant for several reasons:
-- **Practical Applications**:
-  - Real-time analytics for **e-sports and game streaming**.
-  - Automated **game testing and debugging** for developers.
-- **Technical Challenges**:
-  - Requires **zero-shot learning** models to generalize effectively.
-  - Must handle **motion blur, occlusions, and fast viewpoint changes**.
-- **Skill Development**:
-  - Hands-on experience with **transformer-based architectures**.
-  - Understanding **object tracking in dynamic environments**.
-- **Novel Contribution**:
-  - Enhances **gaming-specific tracking models**.
-  - Benchmarks **zero-shot learning for fast-moving objects**.
+## Classification Categories
+- **0** - No DR
+- **1** - Mild DR
+- **2** - Moderate DR
+- **3** - Severe DR
+- **4** - Proliferative DR
+
+## System Architecture
+The project consists of **image preprocessing, model training, inference, and visualization**:
+
+1. **Preprocessing**
+   - Image resizing to **224x224**.
+   - **Normalization** for consistent model input.
+   - **Data augmentation**: rotation, flips, contrast adjustments.
+
+2. **Model Training**
+   - **Modified ResNet50** with additional dense layers for classification.
+   - **Optimizer**: Adam (learning rate = **0.0001**).
+   - **Loss function**: Sparse categorical crossentropy.
+
+3. **Model Explainability**
+   - **Saliency maps** to highlight regions influencing predictions.
+   - Helps interpret model decisions for **transparent AI diagnosis**.
+
+4. **Deployment**
+   - Flask-based **API** for real-time inference.
+   - **Cloud deployment** via AWS Lambda & API Gateway.
 
 ## Team Responsibilities
 | Team Member         | Responsibility |
 |---------------------|---------------|
-| **Tanish Roy**     | Research object tracking architectures, select base models (CLIP, SAM), implement tracking algorithm |
-| **Dev Shah**       | Conduct experiments, tune hyperparameters, optimize zero-shot framework |
-| **Saadullah Shazad** | Handle dataset integration, preprocessing, and evaluation metrics |
-| **Inaam Azeezur-Rahman** | Develop visualizations, document system design, and contribute to validation |
+| **Tanish Roy**     | Research model architectures, implement ResNet50-based classifier |
+| **Dev Shah**       | Conduct training, tune hyperparameters, and evaluate model performance |
+| **Saadullah Shazad** | Dataset preprocessing, image augmentation, and evaluation metrics |
+| **Inaam Azeezur-Rahman** | Develop visualizations, generate saliency maps, and deploy Flask API |
 
 ## Repository Setup
-- **GitHub Repository**: [Zero-Shot-Object-Tracking-FPS](https://github.com/Saadullah-2004/Zero-Shot-Object-Tracking-FPS)
-- **Who set it up?**: Saadullah Shazad
-- **Dataset Access**: Downloaded and preprocessed by Saadullah Shazad
+- **GitHub Repository**: [Retinal-Disease-Detection](https://github.com/Saadullah-2004/Retinal-Disease-Detection)
+- **Dataset Management**: Preprocessed by Saadullah Shazad
 
 ## Next Steps
-1. Implement **object tracking pipeline**.
-2. Fine-tune **pre-trained models** for gaming environments.
-3. Validate and benchmark the **zero-shot tracking performance**.
+1. Train **ResNet50-based model** for DR classification.
+2. Implement **saliency maps** for explainability.
+3. Deploy **Flask-based API** for real-time diagnosis.
 
 ## References
-1. Vaswani, A., et al. *Attention Is All You Need.* NeurIPS, 2017. [Paper](https://arxiv.org/abs/1706.03762)
-2. Radford, A., et al. *Learning Transferable Visual Models from Natural Language Supervision.* ICML, 2021. [Paper](https://arxiv.org/abs/2103.00020)
-3. Doom Gameplay Dataset. [Repository](https://github.com/thavlik/doom-gameplay-dataset)
+1. He, K., et al. *Deep Residual Learning for Image Recognition.* CVPR, 2016. [Paper](https://arxiv.org/abs/1512.03385)
+2. Selvaraju, R.R., et al. *Grad-CAM: Visual Explanations from Deep Networks.* ICCV, 2017. [Paper](https://arxiv.org/abs/1610.02391)
+3. APTOS 2019 Blindness Detection. [Kaggle](https://www.kaggle.com/c/aptos2019-blindness-detection)
 
----
+This project aims to bridge the gap between AI and **medical diagnostics**, providing a transparent and efficient solution for **retinal disease detection**.

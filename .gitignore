@@ -1,2 +1,11 @@
 /APTOS 2019 Blindness Detection
 best_model.pth
+test_images
+train_images
+test.csv
+train.csv
+sample_submission.csv
+.gitignore
+cls.ipynb
+env
+

@@ -8,4 +8,5 @@ sample_submission.csv
 .gitignore
 cls.ipynb
 env
-
+/classifier_model
+.DS_Store

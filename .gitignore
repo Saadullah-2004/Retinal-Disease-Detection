@@ -1,4 +1,5 @@
 /APTOS 2019 Blindness Detection
+/APTOS 2019 Segmentation
 best_model.pth
 test_images
 train_images

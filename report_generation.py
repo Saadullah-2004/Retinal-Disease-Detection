@@ -1,5 +1,5 @@
 from langchain.prompts import PromptTemplate
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.chains import LLMChain
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
@@ -44,7 +44,7 @@ class ReportGenerator:
             {format_instructions}
             """,
             input_variables=["classification_result", "segmentation_metrics", "confidence_score"],
-            partial_variables={"format_instructions": parser.get_format_instructions()}
+            partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
         
         self.chain = LLMChain(llm=self.llm, prompt=self.prompt_template)
@@ -131,7 +131,7 @@ class ReportGenerator:
             f.write(html_report)
 
     def _generate_html_report(self, report: dict, image_path: str, 
-                            heatmap_path: Optional[str] = None) -> str:
+                        heatmap_path: Optional[str] = None) -> str:
         """Generate an HTML version of the report"""
         html_template = """
         <!DOCTYPE html>
@@ -139,13 +139,13 @@ class ReportGenerator:
         <head>
             <title>Retinal Analysis Report</title>
             <style>
-                body { font-family: Arial, sans-serif; margin: 40px; }
-                .header { text-align: center; margin-bottom: 30px; }
-                .section { margin-bottom: 20px; }
-                .images { display: flex; justify-content: center; gap: 20px; margin: 20px 0; }
-                .finding { margin: 10px 0; }
-                .severity { color: red; }
-                .confidence { color: blue; }
+                body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                .header {{ text-align: center; margin-bottom: 30px; }}
+                .section {{ margin-bottom: 20px; }}
+                .images {{ display: flex; justify-content: center; gap: 20px; margin: 20px 0; }}
+                .finding {{ margin: 10px 0; }}
+                .severity {{ color: red; }}
+                .confidence {{ color: blue; }}
             </style>
         </head>
         <body>
@@ -226,7 +226,7 @@ class ReportGenerator:
 # Usage example
 if __name__ == "__main__":
     # Initialize the report generator
-    report_generator = ReportGenerator(openai_api_key="your_openai_api_key")
+    report_generator = ReportGenerator(openai_api_key="")
     
     # Example data
     classification_result = "Moderate Non-proliferative Diabetic Retinopathy"
@@ -239,17 +239,17 @@ if __name__ == "__main__":
     
     # Generate and save report
     report = report_generator.create_report(
-        image_path="path/to/retinal/image.jpg",
+        image_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/test_images/0a2b5e1a0be8.png",
         classification_result=classification_result,
         segmentation_metrics=segmentation_metrics,
         confidence_score=confidence_score,
-        heatmap_path="path/to/heatmap.jpg"
+        heatmap_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/test_images/0a2b5e1a0be8.png"
     )
     
     # Save report files
     report_generator.save_report(
         report=report,
         output_dir="./reports",
-        image_path="path/to/retinal/image.jpg",
-        heatmap_path="path/to/heatmap.jpg"
+        image_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/test_images/0a2b5e1a0be8.png",
+        heatmap_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/test_images/0a2b5e1a0be8.png"
     )

@@ -137,49 +137,56 @@ class ReportGenerator:
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Retinal Analysis Report</title>
+            <title>Enhanced Retinal Analysis Report</title>
             <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                .header {{ text-align: center; margin-bottom: 30px; }}
-                .section {{ margin-bottom: 20px; }}
-                .images {{ display: flex; justify-content: center; gap: 20px; margin: 20px 0; }}
-                .finding {{ margin: 10px 0; }}
-                .severity {{ color: red; }}
-                .confidence {{ color: blue; }}
+                body {{ font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; line-height: 1.6; margin: 0; padding: 20px; }}
+                .container {{ max-width: 800px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); }}
+                .header {{ text-align: center; margin-bottom: 20px; }}
+                h1 {{ color: #003366; margin: 0; }}
+                .section {{ margin: 20px 0; }}
+                .section h2 {{ color: #00509E; border-bottom: 2px solid #00509E; padding-bottom: 5px; }}
+                .key-findings, .recommendations {{ list-style-type: square; padding-left: 20px; }}
+                .image-container {{ display: flex; justify-content: space-around; margin: 20px 0; }}
+                .image-box {{ text-align: center; }}
+                .image-box img {{ width: 350px; border-radius: 8px; border: 2px solid #ddd; }}
+                .confidence-score {{ color: #007BFF; font-weight: bold; }}
+                .severity-score {{ color: #FF5733; font-weight: bold; }}
+                .footer {{ text-align: center; margin-top: 20px; color: #666; }}
             </style>
         </head>
         <body>
-            <div class="header">
-                <h1>Retinal Analysis Report</h1>
-                <p>Report ID: {report_id}</p>
-                <p>Generated on: {date_generated}</p>
-            </div>
-            
-            <div class="section">
-                <h2>Diagnosis Summary</h2>
-                <p><strong>Primary Diagnosis:</strong> {diagnosis}</p>
-                <p><strong>Severity Score:</strong> <span class="severity">{severity}/4</span></p>
-                <p><strong>Confidence Score:</strong> <span class="confidence">{confidence:.2%}</span></p>
-            </div>
-            
-            <div class="section">
-                <h2>Key Findings</h2>
-                {findings_list}
-            </div>
-            
-            <div class="section">
-                <h2>Recommended Actions</h2>
-                {recommendations_list}
-            </div>
-            
-            <div class="section">
-                <h2>Visual Analysis</h2>
-                <div class="images">
-                    <div>
-                        <p><strong>Original Image</strong></p>
-                        <img src="data:image/png;base64,{original_image}" width="400">
+            <div class="container">
+                <div class="header">
+                    <h1>Retinal Analysis Report</h1>
+                    <p>Report ID: {report_id}</p>
+                    <p>Generated on: {date_generated}</p>
+                </div>
+                <div class="section">
+                    <h2>Diagnosis Summary</h2>
+                    <p><strong>Primary Diagnosis:</strong> {diagnosis}</p>
+                    <p><strong>Severity Score:</strong> <span class="severity-score">{severity}/4</span></p>
+                    <p><strong>Confidence Score:</strong> <span class="confidence-score">{confidence:.2%}</span></p>
+                </div>
+                <div class="section">
+                    <h2>Key Findings</h2>
+                    {findings_list}
+                </div>
+                <div class="section">
+                    <h2>Recommended Actions</h2>
+                    {recommendations_list}
+                </div>
+                <div class="section">
+                    <h2>Visual Analysis</h2>
+                    <div class="image-container">
+                        <div class="image-box">
+                            <p><strong>Original Image</strong></p>
+                            <img src="data:image/png;base64,{original_image}" width="400">
+                        </div>
+                        {heatmap_div}
                     </div>
-                    {heatmap_div}
+                </div>
+                <div class="footer">
+                    <p>© 2025 Retinal Analysis AI. All rights reserved.</p>
                 </div>
             </div>
         </body>

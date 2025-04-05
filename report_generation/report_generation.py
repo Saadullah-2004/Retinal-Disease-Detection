@@ -1,159 +1,207 @@
 #!/usr/bin/env python
+import base64
+import io
 import json
 import os
-import time
 from datetime import datetime
-import io
-import base64
+from typing import List, Optional
+
 import numpy as np
 from PIL import Image
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
-from segmentation import UNet
 
-def run_segmentation_inference(model, image_path, device):
+from segmentation import UNet
+from classifier import RetinalClassifier, generate_gradcam
+
+def run_segmentation_inference(model, image_path: str, device: torch.device) -> np.ndarray:
     image = Image.open(image_path).convert("RGB")
     transform = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.ToTensor(),
     ])
-    input_tensor = transform(image).unsqueeze(0).to(device)
+    tensor = transform(image).unsqueeze(0).to(device)
     model.eval()
     with torch.no_grad():
-        output = model(input_tensor)
-        probabilities = F.softmax(output, dim=1)
-        pred_mask = torch.argmax(probabilities, dim=1).squeeze().cpu().numpy()
-    return pred_mask
+        logits = model(tensor)
+        probs = torch.softmax(logits, dim=1)
+        mask = torch.argmax(probs, dim=1).squeeze().cpu().numpy()
+    return mask
 
 def convert_mask_to_color_image(mask: np.ndarray) -> Image.Image:
-    colors = {
+    palette = {
         0: (0, 0, 0),
         1: (255, 0, 0),
         2: (255, 255, 0),
-        3: (0, 255, 0)
+        3: (0, 255, 0),
     }
-    h, w = mask.shape
-    color_image = np.zeros((h, w, 3), dtype=np.uint8)
-    for cls, color in colors.items():
-        color_image[mask == cls] = color
-    return Image.fromarray(color_image)
+    rgb = np.zeros((*mask.shape, 3), dtype=np.uint8)
+    for k, color in palette.items():
+        rgb[mask == k] = color
+    return Image.fromarray(rgb)
 
-def image_to_base64_str(pil_image: Image.Image) -> str:
-    buffered = io.BytesIO()
-    pil_image.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode()
+def image_to_b64(img: Image.Image) -> str:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+def calculate_segmentation_metrics(mask: np.ndarray) -> dict:
+    total = mask.size
+    return {
+        "hemorrhages_percentage": float((mask == 1).sum() / total),
+        "hard_exudates_percentage": float((mask == 2).sum() / total),
+        "microaneurysm_percentage": float((mask == 3).sum() / total),
+        "total_abnormality_percentage": float(((mask > 0) & (mask <= 3)).sum() / total),
+    }
+
+def json_safe(obj):
+    import numpy as np
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    return str(obj)
 
 from langchain.prompts import PromptTemplate
 from langchain.chat_models import ChatOpenAI
 from langchain.output_parsers import PydanticOutputParser
-from langchain.chains import LLMChain
 from pydantic import BaseModel, Field
-from typing import List, Optional
 
 class RetinalFindings(BaseModel):
-    diagnosis: str = Field(description="Primary diagnosis based on the image analysis")
-    severity_score: int = Field(description="Severity score from 0-4")
-    key_findings: List[str] = Field(description="List of specific abnormalities or findings detected")
-    recommended_actions: List[str] = Field(description="Recommended follow-up actions or treatments")
-    confidence_score: float = Field(description="Model's confidence in the diagnosis (0-1)")
+    diagnosis: str
+    severity_score: int
+    key_findings: List[str]
+    recommended_actions: List[str]
+    confidence_score: float
 
 class ReportGenerator:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            temperature=0,
-            model_name="gpt-4",
-            openai_api_key=openai_api_key
-        )
+    def __init__(self, api_key: str):
+        self.llm = ChatOpenAI(temperature=0, model_name="gpt-4", openai_api_key=api_key)
         self.parser = PydanticOutputParser(pydantic_object=RetinalFindings)
-        self.prompt_template = PromptTemplate(
-            template="""You are an expert ophthalmologist AI assistant. Based on the following analysis results, 
-generate a detailed medical report. Please format your response according to the specified output format.
-
-Classification Results: {classification_result}
-Segmentation Results: {segmentation_metrics}
-Confidence Score: {confidence_score}
-
-Rules for report generation:
-1. Be specific about the findings and their implications
-2. Use professional medical terminology
-3. Provide clear severity assessment
-4. Include actionable recommendations
-
-{format_instructions}
-""",
-            input_variables=["classification_result", "segmentation_metrics", "confidence_score"],
-            partial_variables={"format_instructions": self.parser.get_format_instructions()}
+        self.prompt = PromptTemplate(
+            template=(
+                "You are an expert ophthalmologist AI assistant.\n"
+                "Based on the following analysis results, generate a detailed medical report.\n\n"
+                "Classification Results: {classification_result}\n"
+                "Segmentation Results: {segmentation_metrics}\n"
+                "Confidence Score: {confidence_score}\n"
+                "Model Accuracy: {model_accuracy}\n\n"
+                "{format_instructions}"
+            ),
+            input_variables=["classification_result", "segmentation_metrics", "confidence_score", "model_accuracy"],
+            partial_variables={"format_instructions": self.parser.get_format_instructions()},
         )
-        self.chain = self.prompt_template | self.llm | self.parser
+        self.chain = self.prompt | self.llm | self.parser
 
-    def generate_findings(self, classification_result: str, segmentation_metrics: dict, 
-                         confidence_score: float) -> RetinalFindings:
-        result = self.chain.invoke({
-            "classification_result": classification_result,
-            "segmentation_metrics": json.dumps(segmentation_metrics),
-            "confidence_score": confidence_score
-        })
-        return result
-
-    def create_report(self, image_path: str, classification_result: str, 
-                     segmentation_metrics: dict, confidence_score: float,
-                     heatmap_path: Optional[str] = None,
-                     segmentation_model_path: Optional[str] = None) -> dict:
-        findings = self.generate_findings(
-            classification_result,
+    def create_report(
+        self,
+        image_path: str,
+        classification_result: dict,
+        segmentation_metrics: dict,
+        model_accuracy: Optional[float] = None,
+        heatmap_path: Optional[str] = None,
+        segmentation_model_path: Optional[str] = None,
+    ) -> dict:
+        findings = self._generate_findings(
+            classification_result["class_name"],
             segmentation_metrics,
-            confidence_score
+            classification_result["confidence"],
+            model_accuracy,
         )
         report = {
             "report_id": f"RPT_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             "date_generated": datetime.now().isoformat(),
             "patient_info": {
                 "image_id": os.path.basename(image_path),
-                "scan_date": datetime.now().strftime("%Y-%m-%d")
+                "scan_date": datetime.now().strftime("%Y-%m-%d"),
             },
             "analysis_results": {
                 "diagnosis": findings.diagnosis,
                 "severity_score": findings.severity_score,
                 "confidence_score": findings.confidence_score,
                 "key_findings": findings.key_findings,
-                "recommended_actions": findings.recommended_actions
+                "recommended_actions": findings.recommended_actions,
             },
             "technical_metrics": {
                 "classification": classification_result,
-                "segmentation_metrics": segmentation_metrics
-            }
+                "segmentation_metrics": segmentation_metrics,
+                "model_accuracy": model_accuracy,
+            },
         }
         if segmentation_model_path:
-            seg_output_b64 = self._run_segmentation_and_convert(image_path, segmentation_model_path)
-            report["segmentation_output"] = seg_output_b64
+            report["segmentation_output"] = self._segmentation_to_b64(image_path, segmentation_model_path)
+        if heatmap_path and os.path.exists(heatmap_path):
+            with open(heatmap_path, "rb") as fp:
+                report["heatmap"] = base64.b64encode(fp.read()).decode()
         return report
 
-    def _run_segmentation_and_convert(self, image_path: str, model_path: str) -> str:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = UNet(n_channels=3, n_classes=4).to(device)
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        model.eval()
-        pred_mask = run_segmentation_inference(model, image_path, device)
-        color_image = convert_mask_to_color_image(pred_mask)
-        seg_output_b64 = image_to_base64_str(color_image)
-        return seg_output_b64
+    def save_report(self, report: dict, out_dir: str, image_path: str, heatmap_path: Optional[str] = None) -> str:
+        os.makedirs(out_dir, exist_ok=True)
+        json_path = os.path.join(out_dir, f"{report['report_id']}.json")
+        with open(json_path, "w") as fp:
+            json.dump(report, fp, indent=4, default=json_safe)
+        html_path = os.path.join(out_dir, f"{report['report_id']}.html")
+        with open(html_path, "w") as fp:
+            fp.write(self._build_html(report, image_path, heatmap_path))
+        return html_path
 
-    def save_report(self, report: dict, output_dir: str, image_path: str, 
-                   heatmap_path: Optional[str] = None):
-        os.makedirs(output_dir, exist_ok=True)
-        report_path = os.path.join(output_dir, f"{report['report_id']}.json")
-        with open(report_path, 'w') as f:
-            json.dump(report, f, indent=4)
-        html_report = self._generate_html_report(report, image_path, heatmap_path)
-        html_path = os.path.join(output_dir, f"{report['report_id']}.html")
-        with open(html_path, 'w') as f:
-            f.write(html_report)
+    def _generate_findings(self, cls: str, seg: dict, conf: float, acc: Optional[float]):
+        return self.chain.invoke({
+            "classification_result": cls,
+            "segmentation_metrics": json.dumps(seg),
+            "confidence_score": conf,
+            "model_accuracy": f"{acc:.2f}%" if acc is not None else "N/A",
+        })
 
-    def _generate_html_report(self, report: dict, image_path: str, 
-                        heatmap_path: Optional[str] = None) -> str:
-        html_template = """
+    def _segmentation_to_b64(self, img: str, mdl: str) -> str:
+        dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = UNet(3, 4).to(dev)
+        model.load_state_dict(torch.load(mdl, map_location=dev))
+        mask = run_segmentation_inference(model, img, dev)
+        return image_to_b64(convert_mask_to_color_image(mask))
+
+    def _build_html(self, rpt: dict, image_path: str, heatmap_path: Optional[str]) -> str:
+        # Read the original image and encode in base64
+        with open(image_path, "rb") as f:
+            original_image = base64.b64encode(f.read()).decode()
+        
+        # Build the heatmap div if available
+        heatmap_div = ""
+        if heatmap_path and os.path.exists(heatmap_path):
+            with open(heatmap_path, "rb") as f:
+                heatmap_image = base64.b64encode(f.read()).decode()
+            heatmap_div = f"""
+                <div class="image-box">
+                    <p><strong>Analysis Heatmap</strong></p>
+                    <img src="data:image/png;base64,{heatmap_image}" width="400">
+                </div>
+            """
+        
+        # Build key findings and recommended actions lists
+        findings_list = "\n".join([f"<div class='finding'>• {finding}</div>" 
+                                   for finding in rpt['analysis_results']['key_findings']])
+        recommendations_list = "\n".join([f"<div class='finding'>• {rec}</div>" 
+                                          for rec in rpt['analysis_results']['recommended_actions']])
+        
+        # Build segmentation section if segmentation output exists
+        segmentation_section = ""
+        if "segmentation_output" in rpt:
+            segmentation_section = f"""
+                <div class="section">
+                    <h2>Segmentation Output</h2>
+                    <div class="image-container">
+                        <div class="image-box">
+                            <p><strong>Predicted Segmentation Mask</strong></p>
+                            <img src="data:image/png;base64,{rpt['segmentation_output']}" width="400">
+                        </div>
+                    </div>
+                </div>
+            """
+        
+        html_template = f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -178,14 +226,14 @@ Rules for report generation:
             <div class="container">
                 <div class="header">
                     <h1>Retinal Analysis Report</h1>
-                    <p>Report ID: {report_id}</p>
-                    <p>Generated on: {date_generated}</p>
+                    <p>Report ID: {rpt['report_id']}</p>
+                    <p>Generated on: {rpt['date_generated']}</p>
                 </div>
                 <div class="section">
                     <h2>Diagnosis Summary</h2>
-                    <p><strong>Primary Diagnosis:</strong> {diagnosis}</p>
-                    <p><strong>Severity Score:</strong> <span class="severity-score">{severity}/4</span></p>
-                    <p><strong>Confidence Score:</strong> <span class="confidence-score">{confidence:.2%}</span></p>
+                    <p><strong>Primary Diagnosis:</strong> {rpt['analysis_results']['diagnosis']}</p>
+                    <p><strong>Severity Score:</strong> <span class="severity-score">{rpt['analysis_results']['severity_score']}/4</span></p>
+                    <p><strong>Confidence Score:</strong> <span class="confidence-score">{rpt['analysis_results']['confidence_score']:.2%}</span></p>
                 </div>
                 <div class="section">
                     <h2>Key Findings</h2>
@@ -213,79 +261,59 @@ Rules for report generation:
         </body>
         </html>
         """
-        with open(image_path, "rb") as image_file:
-            original_image = base64.b64encode(image_file.read()).decode()
-        heatmap_div = ""
-        if heatmap_path:
-            with open(heatmap_path, "rb") as heatmap_file:
-                heatmap_image = base64.b64encode(heatmap_file.read()).decode()
-                heatmap_div = f"""
-                <div>
-                    <p><strong>Analysis Heatmap</strong></p>
-                    <img src="data:image/png;base64,{heatmap_image}" width="400">
-                </div>
-                """
-        findings_list = "\n".join([f"<div class='finding'>• {finding}</div>" 
-                                 for finding in report['analysis_results']['key_findings']])
-        recommendations_list = "\n".join([f"<div class='finding'>• {rec}</div>" 
-                                        for rec in report['analysis_results']['recommended_actions']])
-        segmentation_section = ""
-        if "segmentation_output" in report:
-            segmentation_section = f"""
-            <div class="section">
-                <h2>Segmentation Output</h2>
-                <div class="image-container">
-                    <div class="image-box">
-                        <p><strong>Predicted Segmentation Mask</strong></p>
-                        <img src="data:image/png;base64,{report['segmentation_output']}" width="400">
-                    </div>
-                </div>
-            </div>
-            """
-        html_report = html_template.format(
-            report_id=report['report_id'],
-            date_generated=report['date_generated'],
-            diagnosis=report['analysis_results']['diagnosis'],
-            severity=report['analysis_results']['severity_score'],
-            confidence=report['analysis_results']['confidence_score'],
-            findings_list=findings_list,
-            recommendations_list=recommendations_list,
-            original_image=original_image,
-            heatmap_div=heatmap_div,
-            segmentation_section=segmentation_section
-        )
-        return html_report
+        return html_template
 
-if __name__ == "__main__":
+def main():
     image_path = "/Users/inaam/Retinal-Disease-Detection/test_images/0ad36156ad5d.png"
     segmentation_model_path = "/Users/inaam/Retinal-Disease-Detection/retinal_segmentation_model.pth"
-    heatmap_path = None
+    classifier_model_path = "/Users/inaam/Retinal-Disease-Detection/Best Model.pth"
+    openai_api_key = "OPENAI_KEY"
     output_dir = "./reports"
-    classification_result = "Moderate Non-proliferative Diabetic Retinopathy"
-    confidence_score = 0.92
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_instance = UNet(n_channels=3, n_classes=4).to(device)
-    model_instance.load_state_dict(torch.load(segmentation_model_path, map_location=device))
-    model_instance.eval()
-    pred_mask = run_segmentation_inference(model_instance, image_path, device)
-    total_pixels = pred_mask.size
-    lesion_area_percentage = (pred_mask == 1).sum() / total_pixels
-    segmentation_metrics = {
-        "lesion_area_percentage": lesion_area_percentage
-    }
-    report_generator = ReportGenerator(openai_api_key="")
-    report = report_generator.create_report(
+    generate_heatmap = False
+    classifier = RetinalClassifier(num_classes=5)
+    classifier.load_model(classifier_model_path)
+    classification_result = classifier.predict_single_image(image_path)
+    accuracy = None
+    try:
+        from transformers.models.vit.configuration_vit import ViTConfig
+        import torch.serialization as _ts
+        _ts.add_safe_globals([ViTConfig])
+        ckpt = torch.load(classifier_model_path, map_location="cpu", weights_only=True)
+        for key in ("best_acc", "accuracy", "val_accuracy"):
+            if isinstance(ckpt, dict) and key in ckpt:
+                accuracy = ckpt[key] * 100 if ckpt[key] <= 1 else ckpt[key]
+                break
+    except Exception as e:
+        print("Could not extract stored accuracy:", e)
+    print(f"Diagnosis  : {classification_result['class_name']}")
+    print(f"Confidence : {classification_result['confidence']:.4f}")
+    if accuracy is not None:
+        print(f"Model Acc. : {accuracy:.2f}%")
+    heatmap_path = None
+    if generate_heatmap:
+        try:
+            heatmap = generate_gradcam(classifier, image_path)
+            heatmap_path = os.path.join(output_dir, os.path.splitext(os.path.basename(image_path))[0] + "_heatmap.png")
+            os.makedirs(output_dir, exist_ok=True)
+            heatmap.save(heatmap_path)
+        except Exception as e:
+            print("Heat‑map generation failed:", e)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    seg_model = UNet(n_channels=3, n_classes=4).to(device)
+    seg_model.load_state_dict(torch.load(segmentation_model_path, map_location=device))
+    mask = run_segmentation_inference(seg_model, image_path, device)
+    seg_metrics = calculate_segmentation_metrics(mask)
+    generator = ReportGenerator(openai_api_key)
+    report = generator.create_report(
         image_path=image_path,
         classification_result=classification_result,
-        segmentation_metrics=segmentation_metrics,
-        confidence_score=confidence_score,
+        segmentation_metrics=seg_metrics,
+        model_accuracy=accuracy,
         heatmap_path=heatmap_path,
-        segmentation_model_path=segmentation_model_path
+        segmentation_model_path=segmentation_model_path,
     )
-    report_generator.save_report(
-        report=report,
-        output_dir=output_dir,
-        image_path=image_path,
-        heatmap_path=heatmap_path
-    )
-    print(f"Report generated and saved in {output_dir}")
+    html_path = generator.save_report(report, output_dir, image_path, heatmap_path)
+    print(f"Report saved to {html_path}")
+
+if __name__ == "__main__":
+    main()

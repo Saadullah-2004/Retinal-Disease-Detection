@@ -66,9 +66,7 @@ This project focuses on developing an **AI-driven diagnostic assistant** for **r
    - **Saliency maps** and **Grad-CAM heatmaps** for interpretability.
    - Enhances trust in **AI-based diagnoses**.
 
-4. **Deployment**
-   - **Flask-based API** for real-time inference.
-   - **Cloud deployment** via AWS Lambda & API Gateway.
+
 
 ## Team Responsibilities
 | Team Member         | Responsibility |

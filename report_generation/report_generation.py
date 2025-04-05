@@ -1,6 +1,5 @@
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-from langchain.chains import LLMChain
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -47,17 +46,19 @@ class ReportGenerator:
             partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
         
-        self.chain = LLMChain(llm=self.llm, prompt=self.prompt_template)
+        # Create the runnable sequence instead of LLMChain
+        self.chain = self.prompt_template | self.llm | self.parser
 
     def generate_findings(self, classification_result: str, segmentation_metrics: dict, 
                          confidence_score: float) -> RetinalFindings:
         """Generate structured findings from model outputs"""
-        result = self.chain.run(
-            classification_result=classification_result,
-            segmentation_metrics=json.dumps(segmentation_metrics),
-            confidence_score=confidence_score
-        )
-        return self.parser.parse(result)
+        # Use invoke instead of run
+        result = self.chain.invoke({
+            "classification_result": classification_result,
+            "segmentation_metrics": json.dumps(segmentation_metrics),
+            "confidence_score": confidence_score
+        })
+        return result
 
     def create_report(self, image_path: str, classification_result: str, 
                      segmentation_metrics: dict, confidence_score: float,
@@ -232,8 +233,10 @@ class ReportGenerator:
 
 # Usage example
 if __name__ == "__main__":
-    # Initialize the report generator
-    report_generator = ReportGenerator(openai_api_key="")
+
+    import os
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    report_generator = ReportGenerator(openai_api_key=openai_api_key)
     
     # Example data
     classification_result = "Moderate Non-proliferative Diabetic Retinopathy"
@@ -246,17 +249,17 @@ if __name__ == "__main__":
     
     # Generate and save report
     report = report_generator.create_report(
-        image_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/test_images/0a2b5e1a0be8.png",
+        image_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/train_images/0a4e1a29ffff.png",
         classification_result=classification_result,
         segmentation_metrics=segmentation_metrics,
         confidence_score=confidence_score,
-        heatmap_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/test_images/0a2b5e1a0be8.png"
+        heatmap_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/train_images/0a4e1a29ffff.png"
     )
     
     # Save report files
     report_generator.save_report(
         report=report,
         output_dir="./reports",
-        image_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/test_images/0a2b5e1a0be8.png",
-        heatmap_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/test_images/0a2b5e1a0be8.png"
+        image_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/train_images/0a4e1a29ffff.png",
+        heatmap_path="/Users/devshah/Documents/WorkSpace/University/year 3/CSC490/Zero-Shot-Object-Tracking-FPS/APTOS 2019 Blindness Detection/train_images/0a4e1a29ffff.png"
     )

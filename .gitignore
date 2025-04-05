@@ -17,3 +17,5 @@ retinal_segmentation_model.pth
 retinal_segmentation.pth
 training_loss.png
 classification_metrics_by_class.png
+retinal_cnn_model.pth
+best_efficientnet_model.pth
